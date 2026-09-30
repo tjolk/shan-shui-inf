@@ -3992,6 +3992,10 @@
     mouseY = e.pageY;
   }
 
+  function calcScale() {
+    return Math.max(0.3, (window.innerHeight - 8) / MEM.windy);
+  }
+
   function calcViewBox() {
     var zoom = 1.142;
     return "" + MEM.cursx + " 0 " + MEM.windx / zoom + " " + MEM.windy / zoom;
@@ -4022,9 +4026,9 @@
 
     document.getElementById("BG").innerHTML =
       "<svg id='SVG' xmlns='http://www.w3.org/2000/svg' width='" +
-      MEM.windx +
+      MEM.windx * calcScale() +
       "' height='" +
-      MEM.windy +
+      MEM.windy * calcScale() +
       "' style='mix-blend-mode:multiply;'" +
       "viewBox = '" +
       calcViewBox() +
@@ -4091,7 +4095,7 @@
           ");\
   " +
           "height:" +
-          MEM.windy +
+          MEM.windy * calcScale() +
           "px"
       );
     document.getElementById(id + ".t").setAttribute(
@@ -4306,7 +4310,7 @@
             document.getElementById("INP_SEED").value = SEED;
             document
               .getElementById("BG")
-              .setAttribute("style", "width:" + MEM.windx + "px");
+              .setAttribute("style", "width:" + MEM.windx * calcScale() + "px");
             update();
             document.body.scrollTo(0, 0);
             console.log(["SCROLLX", window.scrollX]);
