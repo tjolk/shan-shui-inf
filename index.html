@@ -3970,19 +3970,6 @@
     }
   }
 
-  function chunkrender(xmin, xmax) {
-    MEM.canv = "";
-
-    for (var i = 0; i < MEM.chunks.length; i++) {
-      if (
-        xmin - MEM.cwid < MEM.chunks[i].x &&
-        MEM.chunks[i].x < xmax + MEM.cwid
-      ) {
-        MEM.canv += MEM.chunks[i].canv;
-      }
-    }
-  }
-
   document.addEventListener("mousemove", onMouseUpdate, false);
   document.addEventListener("mouseenter", onMouseUpdate, false);
   mouseX = 0;
@@ -3998,55 +3985,89 @@
 
   var VIEW_ZOOM = 1.142;
 
+  // The SVG element is only as wide as needed (about two screens); scrolling
+  // moves it with a compositor-only transform. Chunks are added to / removed
+  // from the DOM one by one, so the whole SVG is never re-parsed while
+  // scrolling. The viewBox is only re-based once the drift gets too large.
+  function calcSvgWidth() {
+    var full = MEM.windx * calcScale();
+    return Math.min(full, Math.max(2 * window.innerWidth, window.innerWidth + 800));
+  }
+
   function calcViewBox() {
-    var zoom = VIEW_ZOOM;
-    return "" + MEM.cursx + " 0 " + MEM.windx / zoom + " " + MEM.windy / zoom;
+    return (
+      MEM.cursx +
+      " 0 " +
+      calcSvgWidth() / (calcScale() * VIEW_ZOOM) +
+      " " +
+      MEM.windy / VIEW_ZOOM
+    );
   }
 
   function viewupdate() {
-    try {
-      // the SVG is rendered once around MEM.renderx; scrolling only moves it
-      // with a (compositor-only) transform instead of repainting every frame
-      document.getElementById("SVG").style.transform =
-        "translate3d(" +
-        -(MEM.cursx - MEM.renderx) * VIEW_ZOOM * calcScale() +
-        "px,0,0)";
-    } catch (e) {
-      console.log("not possible");
-    }
-    //setTimeout(viewupdate,100)
+    var svg = document.getElementById("SVG");
+    if (!svg) return;
+    svg.style.transform =
+      "translate3d(" +
+      -(MEM.cursx - MEM.renderx) * VIEW_ZOOM * calcScale() +
+      "px,0,0)";
   }
 
-  function needupdate() {
-    // only rebuild the SVG once the view has drifted far enough from the
-    // last rendered position; otherwise just move the viewBox
-    return Math.abs(MEM.cursx - MEM.renderx) >= MEM.cwid * 0.75;
+  function needrebase() {
+    var drift = MEM.cursx - MEM.renderx;
+    if (drift < 0) return true;
+    var spare =
+      calcSvgWidth() - window.innerWidth - window.scrollX - 40; // px
+    return drift * VIEW_ZOOM * calcScale() > Math.max(spare, 0);
+  }
+
+  function rebase() {
+    var svg = document.getElementById("SVG");
+    if (!svg) return;
+    MEM.renderx = MEM.cursx;
+    svg.setAttribute("viewBox", calcViewBox());
+    svg.style.transform = "";
+  }
+
+  // make the DOM hold exactly the chunks near the current position
+  function syncChunks() {
+    var g = document.getElementById("G");
+    if (!g) return;
+    MEM.syncx = MEM.cursx;
+    self.chunkloader(MEM.cursx, MEM.cursx + MEM.windx);
+    var lo = MEM.cursx - MEM.cwid;
+    var hi = MEM.cursx + MEM.windx + MEM.cwid;
+    var ref = null; // nearest attached chunk above in draw order
+    for (var i = MEM.chunks.length - 1; i >= 0; i--) {
+      var c = MEM.chunks[i];
+      var inr = lo < c.x && c.x < hi;
+      if (inr && !c.el) {
+        c.el = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        c.el.innerHTML = c.canv;
+        g.insertBefore(c.el, ref);
+      } else if (!inr && c.el) {
+        g.removeChild(c.el);
+        c.el = null;
+      }
+      if (c.el) ref = c.el;
+    }
   }
 
   function update() {
-    //console.log("update!")
-
     MEM.renderx = MEM.cursx;
-    self.chunkloader(MEM.cursx, MEM.cursx + MEM.windx);
-    self.chunkrender(MEM.cursx, MEM.cursx + MEM.windx);
+    for (var i = 0; i < MEM.chunks.length; i++) MEM.chunks[i].el = null;
 
     document.getElementById("BG").innerHTML =
       "<svg id='SVG' xmlns='http://www.w3.org/2000/svg' width='" +
-      MEM.windx * calcScale() +
+      calcSvgWidth() +
       "' height='" +
       MEM.windy * calcScale() +
       "' style='mix-blend-mode:multiply; will-change:transform;'" +
       "viewBox = '" +
       calcViewBox() +
       "'" +
-      "><g id='G' transform='translate(" +
-      0 +
-      ",0)'>" +
-      MEM.canv +
-      //+ "<circle cx='0' cy='0' r='50' stroke='black' fill='red' />"
-      "</g></svg>";
-
-    //setTimeout(update,1000);
+      "><g id='G'></g></svg>";
+    syncChunks();
   }
 </script>
 
@@ -4066,10 +4087,20 @@
 </script>
 
 <script id="UI">
+  function downloadSVG() {
+    var svg = document.getElementById("SVG").cloneNode(true);
+    svg.removeAttribute("style");
+    svg.setAttribute("style", "mix-blend-mode:multiply;");
+    svg.setAttribute("viewBox", calcViewBox());
+    download("" + Math.random() + ".svg", svg.outerHTML);
+  }
   function xcroll(v) {
     MEM.cursx += v;
-    if (needupdate()) {
-      update();
+    if (Math.abs(MEM.cursx - MEM.syncx) >= 100) {
+      syncChunks();
+    }
+    if (needrebase()) {
+      rebase();
     } else {
       viewupdate();
     }
@@ -4264,7 +4295,7 @@
               type="button"
               id="dwn-btn"
               value="Download as SVG"
-              onclick="download(''+(Math.random())+'.svg', document.getElementById('BG').innerHTML);"
+              onclick="downloadSVG()"
             >
               Download as .SVG
             </button>
@@ -4329,7 +4360,7 @@
             document.getElementById("INP_SEED").value = SEED;
             document
               .getElementById("BG")
-              .setAttribute("style", "width:" + MEM.windx * calcScale() + "px");
+              .setAttribute("style", "width:" + calcSvgWidth() + "px");
             update();
             document.body.scrollTo(0, 0);
             console.log(["SCROLLX", window.scrollX]);
