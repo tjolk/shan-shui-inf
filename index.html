@@ -4224,7 +4224,7 @@
 
         <tr>
           <td>
-            <pre><input id = "AUTO_SCROLL" type="checkbox" 
+            <pre><input id = "AUTO_SCROLL" type="checkbox" checked
             onchange="autoxcroll(parseFloat(document.getElementById('INC_STEP').value))">Auto-scroll</pre>
           </td>
 
@@ -4312,6 +4312,9 @@
             console.log(["SCROLLX", window.scrollX]);
             present();
             //draw();
+            setTimeout(function() {
+              autoxcroll(parseFloat(document.getElementById("INC_STEP").value));
+            }, 2000);
           </script>
         </div>
       </td>
