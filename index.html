@@ -3996,14 +3996,21 @@
     return Math.max(0.3, (window.innerHeight - 8) / MEM.windy);
   }
 
+  var VIEW_ZOOM = 1.142;
+
   function calcViewBox() {
-    var zoom = 1.142;
+    var zoom = VIEW_ZOOM;
     return "" + MEM.cursx + " 0 " + MEM.windx / zoom + " " + MEM.windy / zoom;
   }
 
   function viewupdate() {
     try {
-      document.getElementById("SVG").setAttribute("viewBox", calcViewBox());
+      // the SVG is rendered once around MEM.renderx; scrolling only moves it
+      // with a (compositor-only) transform instead of repainting every frame
+      document.getElementById("SVG").style.transform =
+        "translate3d(" +
+        -(MEM.cursx - MEM.renderx) * VIEW_ZOOM * calcScale() +
+        "px,0,0)";
     } catch (e) {
       console.log("not possible");
     }
@@ -4013,7 +4020,7 @@
   function needupdate() {
     // only rebuild the SVG once the view has drifted far enough from the
     // last rendered position; otherwise just move the viewBox
-    return Math.abs(MEM.cursx - MEM.renderx) >= MEM.cwid / 2;
+    return Math.abs(MEM.cursx - MEM.renderx) >= MEM.cwid * 0.75;
   }
 
   function update() {
@@ -4028,7 +4035,7 @@
       MEM.windx * calcScale() +
       "' height='" +
       MEM.windy * calcScale() +
-      "' style='mix-blend-mode:multiply;'" +
+      "' style='mix-blend-mode:multiply; will-change:transform;'" +
       "viewBox = '" +
       calcViewBox() +
       "'" +
@@ -4067,13 +4074,26 @@
       viewupdate();
     }
   }
-  function autoxcroll(v) {
-    if (document.getElementById("AUTO_SCROLL").checked) {
-      xcroll(v);
-      setTimeout(function() {
-        autoxcroll(v);
-      }, 20);
+  var autoScrollRaf = null;
+  function autoxcroll() {
+    if (autoScrollRaf !== null) {
+      cancelAnimationFrame(autoScrollRaf);
+      autoScrollRaf = null;
     }
+    if (!document.getElementById("AUTO_SCROLL").checked) return;
+    var last = performance.now();
+    function tick(t) {
+      if (!document.getElementById("AUTO_SCROLL").checked) {
+        autoScrollRaf = null;
+        return;
+      }
+      // step is in units per 20 ms, applied proportionally to frame time
+      var step = parseFloat(document.getElementById("INC_STEP").value) || 0;
+      xcroll((step * Math.min(t - last, 100)) / 20);
+      last = t;
+      autoScrollRaf = requestAnimationFrame(tick);
+    }
+    autoScrollRaf = requestAnimationFrame(tick);
   }
   function rstyle(id, b) {
     var a = b ? 0.1 : 0.0;
